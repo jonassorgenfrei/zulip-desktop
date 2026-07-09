@@ -18,12 +18,29 @@ jobs:
           - name: windows-x64-msi
             os: windows-latest
             args: --win msi --x64
+          # The arm64 application is wrapped in an x64 MSI installer
+          # (electron-builder's WiX version has no arm64 support yet);
+          # it installs fine on Windows on ARM.
+          - name: windows-arm64-msi
+            os: windows-latest
+            args: --win msi --arm64
           - name: linux-x86_64-appimage
             os: ubuntu-latest
             args: --linux AppImage --x64
+          # One deb covers both Ubuntu and Debian.
+          - name: linux-x86_64-deb
+            os: ubuntu-latest
+            args: --linux deb --x64
+          # One rpm covers the RHEL family, including AlmaLinux 9/10.
+          - name: linux-x86_64-rpm
+            os: ubuntu-latest
+            args: --linux rpm --x64
           - name: macos-x64-dmg
             os: macos-15-intel
             args: --mac dmg --x64
+          - name: macos-arm64-dmg
+            os: macos-latest
+            args: --mac dmg --arm64
     runs-on: ${{ matrix.os }}
     env:
       # This fork has no signing certificates; do not look for a macOS
@@ -45,13 +62,16 @@ jobs:
           # Do not restore caches into release builds (cache poisoning).
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
-      - name: Remove upstream Azure Trusted Signing configuration
-        if: runner.os == 'Windows'
+      - name: Adapt electron-builder configuration for fork builds
         run: |
           node -e "
             const fs = require('node:fs');
             const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            // This fork has no Azure Trusted Signing credentials.
             delete p.build.win.azureSignOptions;
+            // Do not install the official Zulip apt repository from fork
+            // packages; it would replace this build on the next apt upgrade.
+            delete p.build.deb.fpm;
             fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
           "
       - run: pnpm exec install-electron
@@ -68,5 +88,28 @@ jobs:
           path: |
             dist/*.msi
             dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
             dist/*.dmg
           if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: installers
+          merge-multiple: true
+      - name: Create GitHub Release with installers attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            installers/*
