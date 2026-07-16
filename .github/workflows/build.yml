@@ -62,6 +62,12 @@ jobs:
           # Do not restore caches into release builds (cache poisoning).
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
+      # Tag-triggered builds get their version from the tag (minus the
+      # leading "v"), so package.json never needs a version-bump commit.
+      # workflow_dispatch builds keep the version committed in package.json.
+      - name: Set package version from the build tag
+        if: github.ref_type == 'tag'
+        run: npm pkg set version="${GITHUB_REF_NAME#v}"
       - name: Adapt electron-builder configuration for fork builds
         run: |
           node -e "
