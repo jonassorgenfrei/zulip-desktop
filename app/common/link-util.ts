@@ -34,26 +34,13 @@ function openCustomProtocol(url: URL): void {
     child.unref();
     return;
   }
-
-  if (process.platform === "win32") {
-    const child = spawn("cmd.exe", ["/c", "start", "", url.href], {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-    });
-    child.on("error", (error) => {
-      console.error("[protocol] start failed", {href: url.href, error});
-    });
-    child.unref();
-    return;
-  }
 }
 
 export async function openBrowser(url: URL): Promise<void> {
   if (whitelistedProtocols.includes(url.protocol)) {
     if (!protocolsHandledReliablyByShell.has(url.protocol)) {
       openCustomProtocol(url);
-      if (process.platform === "linux" || process.platform === "win32") {
+      if (process.platform === "linux") {
         return;
       }
     }
